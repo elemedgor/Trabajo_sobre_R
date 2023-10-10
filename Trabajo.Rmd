@@ -1,0 +1,793 @@
+---
+title: "Trabajo Elena Medina Gordillo"
+output:
+  flexdashboard::flex_dashboard
+runtime: shiny
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, echo=TRUE, include=TRUE}
+
+```
+
+# CSV {.storyboard data-navmenu="Importación"}
+
+### Datos
+
+La temática de mi trabajo es el cáncer.
+Estuve realizando búsqueda de datos sobre distintos tipos de cáncer, en concreto los de esta sección los obtuve de Eurostat.\
+Nos encontramos con 3 conjuntos de datos sobre cáncer de estómago, de páncreas, de faringe a nivel europeo.
+
+### Importación
+
+```{r echo=TRUE}
+#Importamos las librerías necesarias
+library(flexdashboard)
+library(tidyverse)
+library(knitr)
+library(readr)
+library(ggplot2)
+library(countrycode)
+pancreasW = read_csv("pancreasW.csv", na =":", col_select = c("geo","TIME_PERIOD","OBS_VALUE"),
+                     col_types = cols (geo = col_character(),TIME_PERIOD = col_integer(),OBS_VALUE = col_integer()))
+
+pancreasW
+
+stomachW = read_csv("stomachW.csv", na =":", col_select = c("geo","TIME_PERIOD","OBS_VALUE"),
+                    col_types = cols (geo = col_character(),TIME_PERIOD = col_integer(),OBS_VALUE = col_integer()))
+
+stomachW
+
+lipW = read_csv("lip_oralcavity_pharynxW.csv", na =":", col_select = c("geo","TIME_PERIOD","OBS_VALUE"),
+                col_types = cols (geo = col_character(),TIME_PERIOD = col_integer(),OBS_VALUE = col_integer()))
+
+lipW
+
+
+```
+
+Observamos que los países vienen descritos en forma de código de 2 letras y no con su nombre completo.
+<br>
+
+### Tratamiento
+
+Haciendo uso de la librería countrycode procedemos a transformar la columna "geo" con el nombre completo de los países para que sea fácilmente legible.
+
+```{r echo=TRUE}
+library(countrycode)
+pancreas = pancreasW %>%
+  filter(geo != "EU27_2020" & geo != "EU28" & geo != "FX") %>%
+  mutate(geo = countrycode(geo,origin="eurostat",destination="country.name")) %>%
+  rename(country = "geo", year = "TIME_PERIOD", pancreas = "OBS_VALUE")
+
+stomach = stomachW %>%
+  filter(geo != "EU27_2020" & geo != "EU28" & geo != "FX") %>%
+  mutate(geo = countrycode(geo,origin="eurostat",destination="country.name")) %>%
+  rename(country = "geo", year = "TIME_PERIOD", stomach = "OBS_VALUE")
+
+lip =  lipW %>%
+  filter(geo != "EU27_2020" & geo != "EU28" & geo != "FX") %>%
+  mutate(geo = countrycode(geo,origin="eurostat",destination="country.name")) %>%
+  rename(country = "geo", year = "TIME_PERIOD", lip = "OBS_VALUE")
+```
+
+Por otro lado, al descargar los datos había la opción de género "Total", "Male", "Female" observé que en cualquier caso proporcionaba un conjunto de datos cuyas observaciones eran primero las de Female, Male y Total.
+Incluimos el género en una nueva columna :
+
+```{r echo=TRUE}
+gender = as.factor(c(rep("Woman",316),rep("Man",316),rep("Total",316)))
+
+pancreas  = pancreas %>%
+  mutate (gender = gender) %>%
+  relocate(pancreas, .after=gender)
+ 
+
+pancreas %>%
+  filter(gender == "Woman")
+
+stomach  = stomach %>%
+  mutate (gender = gender) %>%
+  relocate(stomach, .after=gender)
+
+stomach%>%
+  filter(gender == "Man")
+
+gender2 = as.factor(c(rep("Woman",314),rep("Man",316),rep("Total",316)))
+
+lip  = lip %>%
+  mutate (gender = gender2) %>%
+  relocate(lip, .after=gender)
+
+
+lip %>%
+  filter(gender == "Total")
+```
+
+Por último, comprobamos que las observaciones de género "Total" coinciden efectivamente con la suma de las observaciones de Hombre y Mujer.
+
+```{r echo=TRUE}
+pancreas2 = pancreas %>% spread(key = gender, value = pancreas) %>% mutate(total2 = Man + Woman) 
+sum(pancreas2$Total != pancreas2$total2)
+stomach2 = stomach %>% spread(key = gender, value = stomach) %>% mutate(total2 = Man + Woman) 
+sum(stomach2$Total != stomach2$total2)
+lip2 = lip %>% spread(key = gender, value = lip) %>% mutate(total2 = Man + Woman) 
+sum(lip2$Total != lip2$total2) 
+```
+
+Sale NA pq nos damos cuenta de que en Chipre y Luxemburgo para Woman falta un valor (NA) y en el total lo ha supuesto como cero, ERROR habria que poner NA en el total.
+
+```{r echo=TRUE}
+lip2 %>% filter(country== c("Cyprus","Luxembourg"))
+lip[675,3] = NA
+lip[822,3] = NA
+
+summary(pancreas)
+summary(stomach)
+summary(lip)
+```
+
+<br>
+
+# TSV {.storyboard data-navmenu="Importación"}
+
+### Datos
+
+Este conjunto de datos lo extraje también de Eurostat pero en formato tsv, están relacionados con el cáncer de piel.
+
+### Importación
+
+```{r echo=TRUE}
+skin = read_tsv("skin.tsv",na=":",col_names = c("freq,unit,sex,age,icd10,geo",as.character(2001:2010)),skip=1)
+skin 
+
+```
+
+Observamos al importarlos que hay varias variables en una celda (la primera columna ) y varias columnas para la variable year.
+
+### Tratamiento
+
+Agrupamos en una misma columna la variable year y guardamos los datos en la variable skin
+
+```{r echo=TRUE}
+skin %>%
+  gather(as.character(2001:2010), key = "year", value = "skin")
+```
+
+Separamos la primera columna delimitada por "," en varias
+
+```{r echo=TRUE}
+
+skin = skin %>%
+  gather(as.character(2001:2010), key = "year", value = "skin") %>% 
+  separate("freq,unit,sex,age,icd10,geo", into = c("freq","unit","sex","age","icd10","geo"), sep=",") 
+skin 
+
+```
+
+Seleccionamos las variables que nos interesan.Puesto que la página de Eurostat de donde lo descargué es la misma que la de los anteriores #conjuntos de datos, le aplicamos el mismo tratamiento :
+
+```{r echo=TRUE}
+skin = skin %>% select (geo,year,sex,skin)
+
+
+skin = skin  %>%
+  filter(geo != "EU27_2020" & geo != "EU28" & geo != "FX") %>%
+  mutate(geo = countrycode(geo,origin="eurostat",destination="country.name"))%>%
+  rename(country = "geo", year = "year", gender = "sex", skin = "skin")
+skin$gender = factor(skin$gender, levels=c("F","M","T"),
+                        labels = c("Woman","Man","Total"))
+
+skin$year = parse_number(skin$year)
+skin$skin = parse_integer(skin$skin)
+
+skin2 = skin %>% spread(key = gender, value = skin) %>% mutate(total2 = Man + Woman) 
+skin2
+```
+
+Nos damos cuenta que para algunos países hay años en los que no hay registros ni para hombres ni para mujeres (con lo que para el total tampoco, pues hemos visto anteriormente que por defecto en el total si faltaba el dato de Mujeres le imputaban el dato de Hombres).
+Eliminamos estos registros.
+
+```{r echo=TRUE}
+skin = skin2 %>% drop_na(Total) %>% select(-total2) %>% gather(Woman:Total,key = "gender", value = "skin")
+skin$gender = as.factor(skin$gender)
+
+```
+
+<br>
+
+# EXCEL {.storyboard data-navmenu="Importación"}
+
+### Datos
+
+Posteriormente veremos que será necesario importar un dataset con la población sobre los países europeos, obtuve uno a nivel mundial de la página <https://datos.bancomundial.org/indicador/sp.pop.GROW?locations=EU>.
+Éste se encuentra en formato Excel.
+
+### Importación
+
+```{r echo=TRUE}
+library(readxl)
+poblacion = read_xls("poblacion.xls",sheet = 1,skip = 3)
+poblacion
+```
+
+<br>
+
+### Tratamiento
+
+Puesto que vamos a unir este dataframe con los que hemos visto previamente, nos quedamos con los países únicamente a nivel Europeo.
+
+```{r echo=TRUE}
+list_of_countries = unique(stomach$country)
+poblacion = poblacion %>% gather(as.character(1960:2021),key=year,value = population) %>% select("Country Name","year","population")%>%
+  rename(country = "Country Name") %>% filter(between(year,"2001","2010"), country %in% list_of_countries)
+
+poblacion$year = as.integer(poblacion$year)
+```
+
+<br>
+
+<br>
+
+# API {.storyboard data-navmenu="Importación"}
+
+### Datos
+
+Este conjunto de datos se ha extraído del página web del INE <https://www.ine.es/jaxiT3/Datos.htm?t=7947>\
+Hemos importado datos sobre las causas de defunción en 2021 en España, una vez manipulado los datos filtraremos para quedarnos con aquellas causas relacionadas con tumores malignos.
+
+### Importación
+
+```{r echo=TRUE}
+#Cargamos librerías para bajarnos los datos directamente desde la página.
+library(rvest)
+library(XML)
+library(httr)
+url = read_html("https://www.ine.es/jaxiT3/Datos.htm?t=7947")
+url %>% html_node("table") %>%
+  html_table(fill=T, header=F) -> defunciones
+defunciones = defunciones[-c(1,2),]  %>%
+  select(X2)
+defunciones
+```
+
+Observamos que en la misma columna obtenemos las distintas causas de defunciones y justo la observación siguiente es el número de defunciones de esa causa concreta.
+
+### Tratamiento
+
+Creamos un dataframe con dos columnas, causas de defunción y número de casos.
+
+```{r echo=TRUE}
+g1 = defunciones[is.na(as.numeric(defunciones$X2)),]
+g2 = defunciones[!is.na(as.numeric(defunciones$X2)),]
+g = cbind(g1,g2)
+colnames(g) = c("Type","Cases")
+head(g)
+```
+
+En la columna Type aparece un identificador del INE sobre cada causa, lo extraemos en una nueva columna y filtramos aquellas causas relacionadas con el cáncer.
+
+```{r echo=TRUE}
+g %>% spread(key=Type,value=Cases) %>% 
+  select(contains(c("Tumor maligno","tumores malignos"))) %>% 
+  gather(key=Type,value=Cases)->tumores
+
+tumores = tumores %>%
+  separate(Type, into = c("ID_INE", "Type"), sep = "  ")
+
+tumores$Cases = str_replace_all(tumores$Cases, "\\.", "")
+tumores$Cases = as.numeric(tumores$Cases)
+head(tumores)
+summary(tumores)
+```
+
+<br>
+
+# Conjunto sobre cáncer de mama {.storyboard data-navmenu="Importación"}
+
+### Datos
+
+Este conjunto de datos en formato CSV pertenece a la página <https://www.kaggle.com/code/buddhiniw/breast-cancer-prediction>\
+Utilizaremos este conjunto de datos sobre el cáncer de mama para modelizar pues ya vienen "limpios".
+
+### Importación
+
+```{r echo=TRUE}
+cancer = read_csv("Cancer_Data.csv", col_types = cols(id = col_character()))
+cancer$diagnosis = parse_factor(cancer$diagnosis)
+summary(cancer)
+```
+
+<br>
+
+### Gráfico
+
+A partir de los gráficos siguientes se observan ciertas relaciones entre las variables perimeter_mean y area_mean(lo que guarda sentido).
+También entre compactness_mean y concavity_mean.
+
+<br>
+
+```{r echo=TRUE}
+library(GGally)
+library(ggpubr)
+g0_extremos <- cancer %>%
+  ggparcoord(columns=3:12, alphaLines=0.1,groupColumn = 'diagnosis') +
+  xlab('') + ylab('') +
+  ggtitle("Tipificación a normal estándar (por defecto)") +
+  theme(plot.title = element_text(size = 9),axis.text.x = element_text(angle=45, hjust=0.5))
+g0_extremos
+```
+
+<br>
+
+<br>
+
+```{r echo=TRUE}
+g1_extremos <- cancer %>%
+  ggparcoord(columns=3:12, alphaLines=0.1, scale='uniminmax', missing="exclude", groupColumn = 'diagnosis') +
+  xlab('') + ylab('') + 
+  ggtitle("Tipificación a intervalo [0,1] (scale='uniminmax')") +
+  theme(plot.title = element_text(size = 9),axis.text.x = element_text(angle=45, hjust=0.5))
+g1_extremos
+```
+
+<br> Procedemos a analizarlas detenidamente.
+<br>
+
+```{r echo=TRUE}
+g0 <- cancer %>% ggplot(aes(compactness_mean, concavity_mean))
+g1 <- g0 + geom_point()
+g2 <- g1 + geom_abline(slope=1, intercept=0)
+g3 <- g2 + geom_smooth(method='lm', se=FALSE)
+g4 <- g3 + geom_smooth(method='loess', colour='red', se=FALSE)
+g5 <- g4 + 
+  xlab('Compacidad(media)') + ylab('Concavidad(media)')
+ggarrange(g0, g1, g2, g3, g4, g5,
+          labels = c("", "", "", "", "", ""),
+          ncol = 2, nrow = 3)
+```
+
+<br>
+
+<br>
+
+```{r echo=TRUE}
+g0 <- cancer %>% ggplot(aes(area_mean, perimeter_mean))
+g1 <- g0 + geom_point()
+g2 <- g1 + geom_abline(slope=1, intercept=0)
+g3 <- g2 + geom_smooth(method='lm', se=FALSE)
+g4 <- g3 + geom_smooth(method='loess', colour='red', se=FALSE)
+g5 <- g4 + 
+  xlab('Área(media)') + ylab('Perímetro(media)')
+ggarrange(g0, g1, g2, g3, g4, g5,
+          labels = c("", "", "", "", "", ""),
+          ncol = 2, nrow = 3)
+```
+
+<br>
+
+En ambos casos vemos una relación entre ambos pares de variables, a la hora de ajustar un modelo con las variables lo tendremos en cuenta.
+
+<br>
+
+# Uso de join {data-navmenu="Conjunto de datos relacionales"}
+
+Haciendo uso de righ join observamos que hay 4 observaciones del dataset de skin que no están en el resto.
+
+```{r echo=TRUE}
+unidos <- pancreas %>%
+  right_join(stomach ,by = c("country","year","gender"), ) %>%
+  right_join(lip, by = c("country","year","gender")) %>%
+  right_join(skin, by = c("country","year","gender"))
+
+unidos %>%  
+  rowwise()%>%  
+  mutate(num_missing =sum(is.na(c(pancreas,stomach,lip,skin))))%>%  
+  arrange(desc(num_missing))
+```
+
+Al usar left join, puesto que el dataset lip está "contenido" en el de pancreas y stomach ahora sí observamos los dos valores perdidos para lip Woman Chipre 2005 y Luxemburgo 2006 sumado a también las observaciones de gender "Total" que habíamos imputado como NA.
+
+```{r echo=TRUE}
+unidos <- pancreas %>%
+  left_join(stomach ,by = c("country","year","gender")) %>%
+  left_join(lip, by = c("country","year","gender"))%>%
+  left_join(skin, by = c("country","year","gender"))
+
+unidos %>%  
+  rowwise()%>%  
+  mutate(num_missing =sum(is.na(c(pancreas,stomach,lip,skin))))%>%  
+  arrange(desc(num_missing))
+```
+
+Nos quedamos con las observaciones coincidentes de los 3 conjuntos de datos.
+
+```{r echo=TRUE}
+unidos <- pancreas %>%
+  inner_join(stomach, by = c("country","year","gender")) %>%
+  inner_join(lip, by = c("country","year","gender"))%>%
+  inner_join(skin, by = c("country","year","gender"))
+
+unidos %>%  
+  rowwise()%>%  
+  mutate(num_missing =sum(is.na(c(pancreas,stomach,lip,skin))))%>%  
+  arrange(desc(num_missing))
+
+unidos
+```
+
+<br>
+
+# Resúmenes {data-navmenu="Conjunto de datos relacionales"}
+
+Realizamos algunos resúmenes sobre el cáncer de estómago a partir del dataset unidos de la sección anterior.
+
+```{r echo=TRUE}
+unidos %>%
+  filter(gender=="Total")%>%
+  group_by(country) %>%
+  summarise(
+    stomach = mean(stomach)
+  ) %>%
+  arrange(desc(stomach))
+
+```
+
+Parece que Alemania es la que tiene en media mayor número de pacientes con casos de cáncer de estómago, seguido de Italia y España.
+<br>
+
+```{r echo=TRUE}
+unidos %>%
+  filter(gender=="Total")%>%
+  group_by(country) %>%
+  summarise(
+    stomach = mean(stomach)
+  ) %>%
+  arrange(stomach)
+
+```
+
+Observamos que los países con menos casos son Islandia, Luxemburgo y Malta.
+Es evidente que en países con menor número de habitantes éste número será menor, sería conveniente hacer un estudio del número de casos/número de habitantes por país para ver la ratio.
+Nos traemos el dataset población de la 3ª sección de Importación.
+
+```{r echo=TRUE}
+unidos_ratio_stomach = unidos %>% filter(gender=="Total") %>%
+  select(country,year,stomach)%>%
+  inner_join(poblacion, by = c("country","year")) %>% mutate(ratio = stomach/population*1000 )
+
+unidos_ratio_stomach %>%
+  group_by(country) %>%
+  summarise(
+    ratio = mean(ratio)
+  ) %>%
+  arrange(desc(ratio))
+```
+
+Al ver el número de casos teniendo en cuenta el tamaño de la población se observa que:
+
+-   Países pequeños como Letonia, Lituania o Estonia ocupan en realidad las primeras posiciones en cuanto a proporciones se habla.
+
+-   Países con mayor población como Portugal, Italia o Hungría siguen apareciendo en el top 10 de países con mayor número casos de cáncer de estómago.
+
+```{r echo=TRUE}
+unidos_ratio_stomach %>%
+  group_by(country) %>%
+  summarise(
+    ratio = mean(ratio)
+  ) %>%
+  arrange(ratio)
+```
+
+Si los ordenamos de forma ascendente se observa:
+
+-   Países como Francia que antes aparecían a la cabeza, se encuentran en la cola si miramos la ratio.
+    Por otro lado, se observa el caso contrario en Letonia.
+
+-   Países como Chipre, Luxemburgo o Islandia siguen estando por la cola (en el caso de Chipre y Luxemburgo hemos constatado ausencia de valores para ciertos años con lo que puede ser inadecuado sacar conclusiones por falta de datos).
+
+<br>
+
+# Regresión logística {data-navmenu="Modelización"}
+
+Vamos a trabajar con el dataset sobre cáncer de mama de la sección de Importación.
+
+Por un lado contamos con un alto número de variables predictoras, es decir, habría que aplicar pca o algún otro método como step forward o backward para sintetizar el conjunto de datos y quedarnos con aquellas que ajusten mejor nuestros datos.
+
+<br>
+```{r echo=TRUE}
+
+#Regresión logística
+
+library(tidymodels)
+library(tidyverse)
+
+cancer %>%
+  select_if(is.numeric) %>%
+  cor()
+
+```
+<br>
+
+Cuando calculamos la correlación observamos números demasiado altos ya que, por ejemplo, estamos trabajando con la variable radio_mean pero tambien radio_se, radio_worst..
+que están altamente relacionadas.
+Decidimos por tanto trabajar con el conjunto de las 10 predictoras _mean.
+
+<br>
+```{r echo=TRUE}
+
+cancer = cancer %>% select("diagnosis", ends_with("_mean"))
+cancer
+set.seed(1234)
+data_split <- initial_split(cancer,
+                            prop = 0.75,
+                            strata = diagnosis)
+data_training <- data_split %>%
+  training()
+
+data_test <- data_split %>%
+  testing()
+```
+<br>
+```{r echo=TRUE}
+
+
+logistic_model <- logistic_reg() %>%
+  set_engine('glm') %>%
+  set_mode('classification')
+
+cv_folds <- 
+  vfold_cv(data_training, v = 10, strata = diagnosis)
+
+```
+<br>
+
+```{r echo=TRUE}
+data_training %>%
+  ggpairs()
+```
+<br>
+
+Observamos una correlación bastante alta entre las variables, ya vimos en una de las secciones anteriores pares de variables como concavity_mean y compactness_mean que estaban altamente relacionadas aplicaremos pca para evitar multicolinealidad.
+<br>
+
+```{r echo=TRUE}
+pca_tuner <- recipe(diagnosis ~ . , data = data_training) %>%
+  step_zv(all_predictors()) %>%
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors()) %>%
+  step_pca(all_predictors(), num_comp = tune())
+
+pca_twf <- workflow() %>% 
+  add_recipe(pca_tuner) %>% 
+  add_model(logistic_model)
+
+nc10_40 <- expand_grid(num_comp = c(2,3,4,5,6,7))
+
+pca_results <- pca_twf %>% 
+  tune_grid(resamples = cv_folds,grid = nc10_40)
+```
+
+<br>
+
+```{r echo=TRUE}
+pca_results %>% 
+  show_best(metric = "accuracy")
+
+pca_results %>% 
+  show_best(metric = "roc_auc")
+
+pca_best = pca_results %>% select_best(metric = "roc_auc")
+pca_best#Nos quedamos con 5 componentes
+
+lm_last_fit = pca_twf %>% 
+  finalize_workflow(pca_best)  %>% 
+  last_fit(split = data_split) 
+
+lm_last_fit %>% 
+  collect_metrics()
+```
+<br>
+
+```{r echo=TRUE}
+lm_last_fit %>%
+  collect_predictions() %>% 
+  conf_mat(truth = diagnosis, estimate = .pred_class)%>%
+  autoplot(type="heatmap")
+```
+<br> 
+
+Observamos que 132 observaciones de 142 el modelo las predice bien.
+<br>
+```{r echo=TRUE}
+resultados_logistic = lm_last_fit %>%
+  collect_predictions() %>% 
+  conf_mat(truth = diagnosis, estimate = .pred_class)%>%
+  summary
+```
+
+# Random Forest {data-navmenu="Modelización"}
+
+```{r echo=TRUE}
+# Random forest
+
+data_tune_cv <- vfold_cv(data_training,v=10,repeats=1,strata=diagnosis)
+recipe <- data_training %>% recipe(diagnosis ~ .) %>%
+  step_zv(all_predictors()) %>%
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors())
+
+rf_spec <- rand_forest(mtry = tune(), min_n = tune(), trees = tune()) %>% 
+  set_mode("classification") %>% 
+  set_engine("ranger", num.threads = (parallel::detectCores()-1), importance = "impurity") 
+
+rf_wf <- workflow() %>%
+  add_recipe(recipe) %>%
+  add_model(rf_spec)
+
+
+rf_grid <- grid_latin_hypercube(mtry=finalize(mtry(),data_training), min_n(), trees(), size=20)
+rf_tune <- tune_grid(rf_wf, resamples=data_tune_cv, grid=rf_grid)
+
+rf_best <- select_best(rf_tune,metric="roc_auc")
+rf_best
+```
+
+Nos quedamos con 1116 árboles, 7 predictores en cada split y un mínimo de 6 datos para poder realizar una nueva división.
+
+<br>
+```{r echo=TRUE}
+rf_best <- select_best(rf_tune,metric="roc_auc")
+rf_best
+
+rf_training_pred <- rf_wf %>%
+  finalize_workflow(rf_best) %>%
+  fit_resamples(data_tune_cv,control = control_grid(save_pred=TRUE)) %>% 
+  collect_predictions() 
+
+```
+
+<br>
+```{r echo=TRUE}
+rf_training_pred %>%
+  roc_curve(truth=diagnosis,.pred_M) %>%
+  autoplot()
+
+```
+<br> 
+Observamos que la curva prácticamente llega a la esquina superior izquierda lo que significa que nuestro modelo es bastante bueno.
+<br>
+```{r echo=TRUE}
+resultados_RandomF = rf_training_pred %>%
+  conf_mat(truth = diagnosis, estimate = .pred_class) %>%
+  summary
+
+```
+
+# Comparación {data-navmenu="Modelización"}
+
+```{r echo=TRUE}
+comparaciones = resultados_logistic %>%
+  rename(Logistic = ".estimate") %>%
+  inner_join(resultados_RandomF %>% rename(RandomF = ".estimate"), by = c(".metric",".estimator"))
+comparaciones
+
+```
+
+Parece que regresión logística tiene mejor precisión, kappa y sensibilidad que el modelo de randomForest.
+Sin embargo, observamos una mayor especificidad de éste segundo modelo.
+<br>
+
+# Uso de shiny {data-navmenu="App"}
+
+```{r}
+library(shiny)
+library(tidyverse)
+library(ggplot2)
+ui <- navbarPage("Comunicación",
+                 tabPanel("Tabla",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput("gender", "Gender",
+                                          choices = levels(unidos$gender),
+                                          selected = "Total"),
+                              selectInput("year", "Year",
+                                          choices = unique(unidos$year),
+                                          multiple = FALSE,
+                                          selected = 2001
+                              ),
+                              sliderInput('sampleSize', 'Sample Size',
+                                          min=1, max=100, value=10
+                              ),
+                              ),
+                            mainPanel(
+                              tabsetPanel(
+                                tabPanel("Table",tableOutput("table1"))
+                              )))),
+                 tabPanel("Análisis descriptivo de las variables",
+                          sidebarLayout(
+                            sidebarPanel (
+                              selectInput("variable1", "Type",
+                                          choices = c("stomach","lip","pancreas","skin"),
+                                          multiple = FALSE,
+                                          selected = "stomach"),
+                            ),
+                            mainPanel(
+                              plotOutput("plot1")
+                            ))),
+                 tabPanel("Análisis por países",
+                          sidebarLayout(
+                            sidebarPanel (
+                              textInput("title2", "Title", "Cancer"),
+                              numericInput("size", "Point size", 1, 1),
+                              checkboxInput("fit", "Add line of best fit", FALSE),
+                              checkboxInput("se", "Display confidence interval", FALSE),
+                              selectInput("country", "Country",
+                                          choices = unique(unidos$country),
+                                          multiple = TRUE,
+                                          selected = "Albania"),
+                              selectInput("variable2", "Type",
+                                          choices = c("stomach","lip","pancreas","skin"),
+                                          multiple = FALSE,
+                                          selected = "stomach"),
+                           ),
+                            mainPanel(
+                              plotOutput("plot2")
+                            )))
+)
+
+server = function (input,output){
+  datos_filtrados <- reactive({
+    unidos %>%
+      filter(gender == input$gender & year == input$year) %>% slice_sample(n=input$sampleSize)
+
+  })
+
+  output$table1 = renderTable ({datos_filtrados()})
+  output$plot1 <- renderPlot({
+    gb <- unidos %>%
+      ggplot(aes_string(input$variable1)) +
+      xlab('') + ylab('')
+    g0 <- gb +
+      geom_boxplot(aes(y=1),width=.5) +
+      geom_jitter(aes(y=1),width=0.1, height = .25) +
+      scale_y_continuous(breaks=NULL)+
+      ylab('')
+    g0b <- gb +
+      geom_violin(aes(y=1),width=.5) +
+      scale_y_continuous(breaks=NULL)+
+      ylab('')
+    g2 <- gb +
+      geom_histogram(bins=30)
+    g3 <- gb +
+      geom_density()
+    g4 <- unidos %>%
+      ggplot(aes(sample=stomach)) +
+      geom_qq() +
+      xlab('Cuantiles de una N(0, 1)')
+    ggarrange(g0, g0b, g2, g3,
+              labels = c("Diagrama de caja y bigotes", "Diagrama de violín", "Histograma", "Estimación de densidad"),
+              ncol = 2, nrow = 2)
+
+  })
+  output$plot2 <- renderPlot({
+    data <- subset(unidos,
+                   country %in% input$country) %>%
+      select (year, country, gender, input$variable2)
+
+
+    p <- ggplot(data, aes_string(x = "year", y = input$variable2, color = "country")) +
+      geom_point(size = input$size) +
+      scale_x_continuous(breaks = 2001:2010) +
+      ggtitle(input$title2)
+
+    if (input$fit) {
+      p <- p + geom_smooth(se = input$se)
+    }
+    p
+  })
+}
+shinyApp(ui = ui, server = server)
+
+```
